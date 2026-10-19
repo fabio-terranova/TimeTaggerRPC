@@ -1,10 +1,15 @@
+from typing import TYPE_CHECKING
+
 import numpy as np
 import matplotlib.pyplot as plt
 from TimeTaggerRPC import client
 
-import TimeTagger as TT
+if TYPE_CHECKING:
+    # The proxy mirrors the Time Tagger library API, so the library is a handy
+    # source of type hints. It is not needed to actually run this client.
+    from Swabian import TimeTagger as TT
 
-TimeTagger: TT = client.createProxy(host='localhost', port=23000)
+TimeTagger: 'TT' = client.createProxy(host='localhost', port=23000)
 
 print('Time Tagger software version (remote):', TimeTagger.getVersion())
 

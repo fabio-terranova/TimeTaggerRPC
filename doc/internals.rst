@@ -42,10 +42,13 @@ and we only need to tell |pyro5| what we want to become available remotely.
 
 Initial setup
 =================
-You will need to have a Python 3.6 or newer installed on your computer. 
+You will need to have a Python 3.8 or newer installed on your computer.
 We recommend to use Anaconda distribution.
 
 Install the `Time Tagger software <https://www.swabianinstruments.com/time-tagger/downloads/>`__ if have not done it yet.
+Version 2.20 or newer is required. Since that release the Python bindings are
+also available from PyPi as ``pip install Swabian-TimeTagger`` and are imported
+from the ``Swabian.TimeTagger`` namespace.
 The description below assumes that you have the Time Tagger hardware and are familiar with the :doc:`Time Tagger API<ttdoc:api/index>`.
 
 The last missing part, the |pyro5| package, you can install from `PyPi <https://pypi.org/project/Pyro5/>`__ as
@@ -70,7 +73,7 @@ We need to create an adapter class with methods that we want to access remotely 
 .. code-block:: python
 
     import Pyro5.api
-    import TimeTagger as TT
+    from Swabian import TimeTagger as TT
 
     @Pyro5.api.expose
     class TimeTaggerRPC:

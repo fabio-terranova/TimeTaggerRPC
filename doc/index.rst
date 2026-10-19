@@ -12,7 +12,15 @@ Remote Time Tagger with Python
    :width: 100 %
 
 
-Install
+Install on the PC with the Time Tagger connected. The ``server`` extra pulls in
+the Time Tagger library (2.20 or newer) from PyPi.
+
+::
+
+   > pip install TimeTaggerRPC[server]
+
+
+Clients communicate over Pyro5 and do not need the Time Tagger library.
 
 ::
 

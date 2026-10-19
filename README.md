@@ -6,16 +6,55 @@
 Time Tagger RPC implementation using [Pyro5](https://pypi.org/project/Pyro5/).
 
 
+### About this fork
+This is a fork of [swabianinstruments/TimeTaggerRPC](https://github.com/swabianinstruments/TimeTaggerRPC),
+which has not been updated since January 2024 and targets a Time Tagger release
+older than 2.18. This fork tracks the current Time Tagger software, tested
+against **2.22.6**.
+
+The badges above refer to the upstream package on PyPI. This fork is not
+published there, so install it from the repository:
+
+```
+> pip install "TimeTaggerRPC[server] @ git+https://github.com/fabio-terranova/TimeTaggerRPC"
+```
+
+
 ### Alpha version !
 This project is in the alpha stage of the development. This means that the code 
 successfully passed basic testing and is operational. 
 However, some things might be broken, and the API may change in the future versions.
 
 
+### Requirements
+
+* Python 3.8 or newer
+* [Time Tagger software](https://www.swabianinstruments.com/time-tagger/downloads/) 2.20 or newer,
+  on the machine with the device attached
+
+Time Tagger 2.20 moved the Python bindings to the `Swabian.TimeTagger` namespace
+and publishes them as the [`Swabian-TimeTagger`](https://pypi.org/project/Swabian-TimeTagger/)
+package. Wheels are available for Linux and Windows.
+
 ### Install
+
+On the machine with the Time Tagger connected, install the server extra to pull
+in the hardware library:
+
+```
+> pip install TimeTaggerRPC[server]
+```
+
+Clients only talk Pyro5 and do not need the hardware library:
 
 ```
 > pip install TimeTaggerRPC
+```
+
+The scripts in `examples/` plot their results, so they also need matplotlib:
+
+```
+> pip install TimeTaggerRPC[examples]
 ```
 
 ### Run server
