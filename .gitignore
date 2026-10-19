@@ -2,3 +2,7 @@ __pycache__
 .vscode/**
 doc/_build/**
 dist
+# Local environments. The lockfile is intentionally not tracked, because a
+# library should not constrain the dependency resolution of its consumers.
+.venv/
+uv.lock

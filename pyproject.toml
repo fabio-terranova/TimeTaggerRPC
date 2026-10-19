@@ -1,40 +1,51 @@
 [build-system]
-requires = ["flit_core >=2,<4"]
+requires = ["flit_core >=3.4,<4"]
 build-backend = "flit_core.buildapi"
 
-[tool.flit.metadata]
-module = "TimeTaggerRPC"
-author = "Igor Shavrin, Swabian Instruments GmbH"
-author-email = "igor@swabianinstruments.com"
-home-page = "https://github.com/swabianinstruments/TimeTaggerRPC"
-description-file = "README.md"
-requires = [
-    "Pyro5",
-    "numpy"
+[project]
+name = "TimeTaggerRPC"
+dynamic = ["version", "description"]
+readme = "README.md"
+requires-python = ">=3.8"
+license = { file = "LICENSE.txt" }
+authors = [
+  { name = "Igor Shavrin, Swabian Instruments GmbH", email = "igor@swabianinstruments.com" },
 ]
-requires-python = ">=3.6,<4"
-license = "BSD 3-Clause"
-classifiers=[
-    "License :: OSI Approved :: BSD License",
-    "Development Status :: 3 - Alpha",
-    "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.6",
-    "Programming Language :: Python :: 3.7",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
-    "Topic :: Software Development :: Libraries :: Python Modules",
-    "Topic :: Scientific/Engineering",
-    "Intended Audience :: Developers",
-    "Intended Audience :: Science/Research",
+dependencies = ["Pyro5", "numpy>=1.23"]
+classifiers = [
+  "License :: OSI Approved :: BSD License",
+  "Development Status :: 3 - Alpha",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.8",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+  "Topic :: Scientific/Engineering",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Science/Research",
 ]
 
-[tool.flit.metadata.urls]
+[project.optional-dependencies]
+# Only the machine with the Time Tagger attached needs the hardware library.
+# Clients talk to the server over Pyro5 and do not need it.
+server = ["Swabian-TimeTagger>=2.20"]
+# Plotting is used by the scripts in examples/ and tests/, never by the
+# package itself. matplotlib raised its own Python floor several times, so
+# each marker pins the newest release that the running Python can install.
+examples = [
+  "matplotlib>=3.11.2; python_version >= '3.11'",
+  "matplotlib>=3.10.9; python_version == '3.10'",
+  "matplotlib>=3.9.4; python_version == '3.9'",
+  "matplotlib>=3.7.5; python_version < '3.9'",
+]
+
+[project.urls]
+Homepage = "https://github.com/fabio-terranova/TimeTaggerRPC"
 Documentation = "https://timetaggerrpc.readthedocs.io/"
 Hardware = "https://www.swabianinstruments.com/time-tagger/"
 
-[tool.flit.scripts]
+[project.scripts]
 TimeTaggerRPC-server = "TimeTaggerRPC.server:main"
-

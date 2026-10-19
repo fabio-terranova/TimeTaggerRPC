@@ -10,17 +10,17 @@ on:
     branches: [ main ]
 
 jobs:
-  build:
+  lint:
 
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ['3.6', '3.7', '3.8', '3.9', '3.10', '3.11', '3.12']
+        python-version: ['3.8', '3.9', '3.10', '3.11', '3.12', '3.13']
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
     - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v2
+      uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
     - name: Install dependencies
@@ -37,6 +37,45 @@ jobs:
     - name: Check spelling errors in the code and documentation
       run: |
         codespell
-    # - name: Test with pytest
-    #  run: |
-    #    pytest
+
+  # Builds every RPC adapter class against the real Time Tagger library.
+  # This exercises the whole introspection path in server.py and needs no
+  # hardware, because adapter generation only reads the class definitions.
+  adapters:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Install package with the Time Tagger library
+      run: |
+        python -m pip install --upgrade pip
+        python -m pip install -e '.[server]'
+    - name: Report library version
+      run: |
+        python -c "from Swabian import TimeTagger; print('Time Tagger', TimeTagger.getVersion())"
+    - name: Generate all RPC adapters
+      run: |
+        python -c "
+        import logging
+        logging.basicConfig(level=logging.DEBUG)
+        from TimeTaggerRPC import server
+        server.check_timetagger_version()
+        rpc = server.make_timetagger_library_adapter()
+        names = sorted(n for n in dir(rpc) if not n.startswith('_'))
+        print('Exposed members:', len(names))
+        for n in names:
+            print(' -', n)
+        enums = rpc._enums
+        print('Exposed enums:', sorted(enums))
+        assert 'createTimeTagger' in names, 'createTimeTagger must be exposed'
+        assert 'Correlation' in names, 'Correlation must be exposed'
+        assert 'freeTimeTagger' in names
+        # Time Tagger facets without a create*() factory must not be exposed.
+        for n in ('createTimeTaggerSource', 'createTimeTaggerHardware', 'createTimeTaggerServer'):
+            assert n not in names, n + ' must not be exposed'
+        "

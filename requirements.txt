@@ -1,2 +1,6 @@
+# Client and server dependencies.
+# The Time Tagger library itself is only needed on the machine with the
+# device attached. Install it with:  pip install TimeTaggerRPC[server]
+# The scripts in examples/ additionally need:  pip install TimeTaggerRPC[examples]
 Pyro5
-numpy
+numpy>=1.23
