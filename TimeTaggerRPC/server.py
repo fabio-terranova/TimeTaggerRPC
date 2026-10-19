@@ -4,21 +4,46 @@ import enum
 import uuid
 
 import Pyro5.api
-import TimeTagger as TT
+from Swabian import TimeTagger as TT
 
 from . import helper
 
 
+#: Oldest Time Tagger software release this package is tested against.
+#: 2.20.0 is the first release that provides the ``Swabian.TimeTagger``
+#: namespace and the ``Swabian-TimeTagger`` PyPI distribution.
+MINIMUM_TIMETAGGER_VERSION = (2, 20)
+
 EXCLUDED_LIBRARY_MEMBERS = [
-    'TimeTaggerBase', 'IteratorBase', 'Iterator', 'FlimAbstract',
+    # Abstract bases that must not be constructed directly.
+    'TimeTaggerBase', 'IteratorBase', 'Iterator', 'FlimAbstract', 'FlimBase',
+    # Since Time Tagger 2.18 the TimeTagger class is split into the
+    # TimeTaggerSource and TimeTaggerHardware facets. These, like
+    # TimeTaggerServer, are handed out by the library rather than created by
+    # the user and have no create*() factory function. Their methods are still
+    # reachable, because the TimeTagger adapter walks the full class hierarchy.
+    'TimeTaggerSource', 'TimeTaggerHardware', 'TimeTaggerServer',
+    # The Virtual Time Tagger replays local files and got a new run()-based
+    # API in 2.18. Driving it over RPC is not supported.
     'TimeTaggerVirtual', 'createTimeTaggerVirtual',
+    # Require a client-side subclass or callback, which Pyro cannot forward.
     'CustomMeasurement', 'CustomMeasurementBase', 'CustomMeasurementBase_stop_all_custom_measurements',
     'TimeTagStream', 'FileReader', 'TimeTagStreamBuffer',
     'setLogger', 'setCustomBitFileName', 'hasTimeTaggerVirtualLicense',
     'setFrontend', 'setLanguageInfo', 'flashLicense',
 ]
 
+#: Measurements whose data object does not follow the <Name>Data naming
+#: convention. Used only when the return annotation of getDataObject() does
+#: not name a known class.
+DATA_OBJECT_CLASS_OVERRIDES = {
+    'HistogramCustomBins': 'HistogramLogBinsData',  # shared with HistogramLogBins
+    'PulsePerSecondMonitor': 'PulsePerSecondData',
+}
+
 EXCLUDED_ITERATOR_ATTRIBUTES = [
+    # Blocking calls would stall the Pyro daemon thread for the whole
+    # measurement duration. Clients should poll isRunning() instead.
     'waitUntilFinished',
 ]
 
@@ -114,6 +139,35 @@ def make_class_attribute_proxy(attrib: inspect.Attribute):
         raise ValueError('Unknown attribute kind %s', attrib.kind)
 
 
+def resolve_data_object_class_name(iterator_class, class_name: str):
+    """Returns the name of the Time Tagger class returned by getDataObject().
+
+    The return type annotation is preferred, because it stays correct for
+    measurement classes added in future library versions. Falls back to the
+    table of known exceptions and finally to the <Name>Data convention.
+    Returns None when none of the candidates exists in the library.
+    """
+
+    candidates = []
+    try:
+        annotation = inspect.signature(iterator_class.getDataObject).return_annotation
+    except (TypeError, ValueError):
+        annotation = inspect.Signature.empty
+    if annotation is not inspect.Signature.empty:
+        if inspect.isclass(annotation):
+            candidates.append(annotation.__name__)
+        elif isinstance(annotation, str):
+            # Stringized annotation, possibly qualified with a module path.
+            candidates.append(annotation.rsplit('.', 1)[-1])
+    candidates.append(DATA_OBJECT_CLASS_OVERRIDES.get(class_name))
+    candidates.append(class_name + 'Data')
+
+    for name in candidates:
+        if name and hasattr(TT, name):
+            return name
+    return None
+
+
 def make_data_object_adaptor_class(class_name):
     """Generates adaptor class for DataObject returned by Iterator.getDataObject()."""
 
@@ -151,7 +205,12 @@ def make_iterator_adapter_class(class_name: str):
 
     attributes = {}
 
-    if hasattr(iterator_class, 'getDataObject'):
+    has_data_object = hasattr(iterator_class, 'getDataObject')
+    data_class_name = resolve_data_object_class_name(
+        iterator_class, class_name) if has_data_object else None
+    if data_class_name:
+        logger.debug('|-> %s.getDataObject() -> %s', class_name, data_class_name)
+
         def getDataObject(self, *args, **kwargs):
             data_obj = self._obj.getDataObject(*args, **kwargs)
             pyro_obj = self._DataObjectAdapter(data_obj)
@@ -159,8 +218,13 @@ def make_iterator_adapter_class(class_name: str):
             return pyro_obj
         getDataObject.__doc__ = inspect.getdoc(iterator_class.getDataObject)
         getDataObject.__signature__ = inspect.signature(iterator_class.getDataObject)
-        attributes['_DataObjectAdapter'] = make_data_object_adaptor_class(class_name+'Data')
+        attributes['_DataObjectAdapter'] = make_data_object_adaptor_class(data_class_name)
         attributes['getDataObject'] = getDataObject
+    elif has_data_object:
+        logger.warning(
+            '%s.getDataObject() is not exposed because its data object class '
+            'could not be found in the Time Tagger library.', class_name
+        )
 
     # Iterate over all methods of the measurement and create proxy methods
     for attrib in inspect.classify_class_attrs(iterator_class):
@@ -355,6 +419,13 @@ def make_timetagger_library_adapter():
         elif issubclass(Cls, TT.IteratorBase):
             attributes[name] = make_iterator_constructor(name)
         elif issubclass(Cls, TT.TimeTaggerBase):
+            # Only Time Tagger flavours with a create*() factory can be
+            # instantiated remotely. Others (TimeTaggerSource and
+            # TimeTaggerHardware since 2.18, TimeTaggerServer) are handed out
+            # by the library itself and are skipped by EXCLUDED_LIBRARY_MEMBERS.
+            if not hasattr(TT, 'create' + name):
+                logger.debug('|-> TimeTaggerRPC.%s \t=> NO FACTORY, SKIPPED', name)
+                continue
             attributes['create'+name] = make_tagger_constructor(name)
         elif issubclass(Cls, TT.SynchronizedMeasurements):
             attributes[name] = make_synchronized_measurement_constructor()
@@ -363,17 +434,6 @@ def make_timetagger_library_adapter():
             enum_values = tuple((e.name, e.value) for e in Cls)
             if len(enum_values) > 0:
                 attributes['_enums'][name] = (enum_type.__name__, enum_values)
-        elif name in ('Resolution', 'CoincidenceTimestamp', 'ChannelEdge'):
-            # This case handles older TimeTagger versions that do not use "enum" package.
-            if name in attributes['_enums']:
-                continue
-            enum_type = 'IntEnum'  # Use IntEnum for all enums
-            enum_values = list()
-            for atr in inspect.classify_class_attrs(Cls):
-                if not atr.name.startswith('_'):
-                    enum_values.append((atr.name, atr.object))
-            if len(enum_values) > 0:
-                attributes['_enums'][name] = (enum_type, tuple(enum_values))
 
     # Construct and expose the final RPC adapter class
     TimeTaggerRPC = type('TimeTaggerRPC', (object,), attributes)
@@ -381,11 +441,52 @@ def make_timetagger_library_adapter():
     return Pyro5.api.expose(TimeTaggerRPC)
 
 
+def timetagger_version():
+    """Returns the Time Tagger library version as a tuple of integers.
+
+    Trailing non-numeric parts of the version string are ignored.
+    Returns an empty tuple if the version cannot be determined.
+    """
+    try:
+        version_string = TT.getVersion()
+    except AttributeError:
+        return ()
+    parts = []
+    for part in str(version_string).split('.'):
+        if not part.isdigit():
+            break
+        parts.append(int(part))
+    return tuple(parts)
+
+
+def check_timetagger_version():
+    """Warns if the installed Time Tagger library is older than supported.
+
+    Messages are printed rather than logged, because logging is only
+    configured when the server runs in verbose mode.
+    """
+
+    version = timetagger_version()
+    if not version:
+        print('Warning: could not determine the Time Tagger library version.')
+        return
+    found = '.'.join(str(p) for p in version)
+    print('Time Tagger library version=', found)
+    if version < MINIMUM_TIMETAGGER_VERSION:
+        required = '.'.join(str(p) for p in MINIMUM_TIMETAGGER_VERSION)
+        print(
+            'Warning: Time Tagger {} is older than the supported minimum {}. '
+            'Some measurements may fail to be exposed over RPC.'.format(found, required)
+        )
+
+
 def start_server(host='localhost', port=23000, use_ns=False, start_ns=False, verbose=False):
     """This method starts the Pyro server eventloop and processes client requests."""
 
     if verbose:
         logging.basicConfig(level=logging.DEBUG)
+
+    check_timetagger_version()
 
     # Start Pyro nameserver in a subprocess
     if start_ns:
